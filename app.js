@@ -1,6 +1,6 @@
 (()=>{
 const STORAGE_KEY='training-menu-maker-v2', LEGACY_KEY='training-menu-maker-v1', HISTORY_KEY='training-menu-history-v1', HISTORY_DB='training-menu-history-db-v1', HISTORY_STORE='images', HISTORY_MIGRATED_KEY='training-menu-history-migrated-v1';
-const defaultState={categories:[{id:'cat_basic',name:'基礎'},{id:'cat_knock',name:'ノック'},{id:'cat_footwork',name:'フットワーク'},{id:'cat_game',name:'ゲーム'},{id:'cat_core',name:'体幹'},{id:'cat_other',name:'その他'}],menus:[{id:'menu_1',name:'基礎打ち',categoryId:'cat_basic',seconds:300,requiresSets:true},{id:'menu_2',name:'スマッシュノック',categoryId:'cat_knock',seconds:120,requiresSets:true},{id:'menu_3',name:'フットワーク',categoryId:'cat_footwork',seconds:180,requiresSets:true},{id:'menu_4',name:'ゲーム練習',categoryId:'cat_game',seconds:480,requiresSets:true},{id:'menu_5',name:'体幹トレーニング',categoryId:'cat_core',seconds:600,requiresSets:false},{id:'menu_6',name:'休憩',categoryId:'cat_other',seconds:300,requiresSets:false}],history:[]};
+const defaultState={categories:[{id:'cat_basic',name:'準備'},{id:'cat_knock',name:'基礎'},{id:'cat_footwork',name:'技術'},{id:'cat_game',name:'実戦'},{id:'cat_core',name:'体力'},{id:'cat_other',name:'その他'}],menus:[{id:'menu_1',name:'ウォームアップ',categoryId:'cat_basic',seconds:600,requiresSets:false},{id:'menu_2',name:'基礎練習',categoryId:'cat_knock',seconds:180,requiresSets:true},{id:'menu_3',name:'技術練習',categoryId:'cat_footwork',seconds:180,requiresSets:true},{id:'menu_4',name:'ゲーム形式',categoryId:'cat_game',seconds:480,requiresSets:true},{id:'menu_5',name:'体幹トレーニング',categoryId:'cat_core',seconds:600,requiresSets:false},{id:'menu_6',name:'休憩',categoryId:'cat_other',seconds:300,requiresSets:false}],history:[]};
 const $=id=>document.getElementById(id);
 let state=loadState();
 let currentScreen='home';
@@ -8,7 +8,7 @@ let createCategory='all';
 let listCategory='all';
 let selectedMenuIds=[];
 let selectedPeople=[4,5];
-let currentSheetTitle='春練メニュー';
+let currentSheetTitle='メニュー表';
 let setPlan=[];
 let addCategoryId=state.categories[0]?.id||'';
 let editingMenuId=null;
@@ -17,6 +17,8 @@ let reorderMode=false;
 let activeDrag=null;
 let historyObjectUrls=[];
 let historyRenderToken=0;
+let historyPreviewId='';
+let downloadSequence=0;
 let lastImageDataUrl='';
 let lastHistoryDataUrl='';
 let lastHistoryBlob=null;
@@ -32,6 +34,9 @@ function txStore(db,mode='readonly'){return db.transaction(HISTORY_STORE,mode).o
 function dataURLToBlob(dataUrl){const parts=String(dataUrl).split(','),meta=parts[0]||'',bin=atob(parts[1]||''),mime=(meta.match(/data:(.*?);base64/)||[])[1]||'image/png',u8=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u8[i]=bin.charCodeAt(i);return new Blob([u8],{type:mime})}
 function blobToObjectUrl(blob){return URL.createObjectURL(blob)}function revokeHistoryObjectUrls(){historyObjectUrls.forEach(url=>URL.revokeObjectURL(url));historyObjectUrls=[]}
 function historyExt(item){const type=item?.type||item?.blob?.type||String(item?.dataUrl||'').match(/^data:(.*?);/)?.[1]||'image/png';return type.includes('jpeg')||type.includes('jpg')?'jpg':'png'}
+function safeFileName(value){const cleaned=String(value||'メニュー表').normalize('NFKC').replace(/[<>:"/\\|?*\u0000-\u001f]/g,'-').replace(/\s+/g,'_').replace(/[. ]+$/g,'').slice(0,60);return cleaned||'メニュー表'}
+function uniqueImageFileName(title,extension){const now=new Date(),pad=(value,length=2)=>String(value).padStart(length,'0');downloadSequence=(downloadSequence+1)%100;const stamp=`${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}-${pad(now.getMilliseconds(),3)}-${pad(downloadSequence)}`;return `${safeFileName(title)}-${stamp}.${extension}`}
+function triggerDownload(href,fileName){const a=document.createElement('a');a.href=href;a.download=fileName;document.body.appendChild(a);a.click();a.remove()}
 async function getHistoryRecords(){try{const db=await openHistoryDB();return await new Promise((resolve,reject)=>{const req=txStore(db).getAll();req.onsuccess=()=>resolve((req.result||[]).sort((a,b)=>new Date(a.createdAt)-new Date(b.createdAt)));req.onerror=()=>reject(req.error)})}catch(e){console.warn('IndexedDB履歴を読めませんでした。localStorage履歴にフォールバックします。',e);return loadLocalHistory().map(item=>({...item,type:String(item.dataUrl||'').match(/^data:(.*?);/)?.[1]||'image/png',blob:null}))}}
 async function putHistoryRecord(item){try{const db=await openHistoryDB();await new Promise((resolve,reject)=>{const req=txStore(db,'readwrite').put(item);req.onsuccess=()=>resolve();req.onerror=()=>reject(req.error)});return true}catch(e){console.error(e);alert('履歴を保存できませんでした。ブラウザの保存容量・設定を確認してください。');return false}}
 async function deleteHistoryRecord(id){try{const db=await openHistoryDB();await new Promise((resolve,reject)=>{const req=txStore(db,'readwrite').delete(id);req.onsuccess=()=>resolve();req.onerror=()=>reject(req.error)});return true}catch(e){console.error(e);return false}}
@@ -46,7 +51,7 @@ function mutateAndSave(mutator){
   state.menus=previous.menus;
   return false;
 }
-function migrateState(){let changed=false;if(!Array.isArray(state.categories)){state.categories=clone(defaultState.categories);changed=true}if(!Array.isArray(state.menus)){state.menus=clone(defaultState.menus);changed=true}if(!Array.isArray(state.history)){state.history=[];changed=true}state.menus.forEach((m,i)=>{if(m.seconds===undefined){m.seconds=Number(m.minutes||0)*60;changed=true}delete m.minutes;if(m.requiresSets===undefined){m.requiresSets=true;changed=true}if(m.order===undefined){m.order=i;changed=true}});if(changed)saveState();migrateHistoryToIDB().then(renderHistoryScreen)}
+function migrateState(){let changed=false;if(!Array.isArray(state.categories)){state.categories=clone(defaultState.categories);changed=true}if(!Array.isArray(state.menus)){state.menus=clone(defaultState.menus);changed=true}if(!Array.isArray(state.history)){state.history=[];changed=true}state.menus.forEach((m,i)=>{if(m.seconds===undefined){m.seconds=Number(m.minutes||0)*60;changed=true}delete m.minutes;if(m.requiresSets===undefined){m.requiresSets=true;changed=true}if(m.order===undefined){m.order=i;changed=true}});if(changed)saveState();migrateHistoryToIDB().then(()=>{if(currentScreen==='history')renderHistoryScreen()})}
 function showScreen(name){
   const previousScreen=currentScreen;
   const direction=slideDirection(previousScreen,name);
@@ -55,6 +60,7 @@ function showScreen(name){
   currentScreen=name;
   if(name!=='history'){
     historyRenderToken+=1;
+    closeHistoryPreview();
     revokeHistoryObjectUrls();
   }
   document.querySelectorAll('.screen').forEach(screen=>screen.classList.remove('active','slide-forward','slide-back'));
@@ -309,10 +315,37 @@ function deleteCategory(id){
   renderCreateScreen();
   renderListScreen();
 }
-async function renderHistoryScreen(){const token=++historyRenderToken,list=$('historyList');if(!list)return;revokeHistoryObjectUrls();list.innerHTML='<div class="empty">読み込み中...</div>';const hist=await getHistoryRecords();if(token!==historyRenderToken)return;state.history=hist.map(({blob,...rest})=>rest);list.innerHTML='';if(!hist.length){list.innerHTML='<div class="empty">履歴がありません<br>画像出力後に「履歴に追加」を押してください</div>';return}hist.slice().reverse().forEach(item=>{const imgUrl=item.blob?blobToObjectUrl(item.blob):item.dataUrl;if(item.blob)historyObjectUrls.push(imgUrl);const card=document.createElement('div');card.className='history-card';card.innerHTML=`<img src="${imgUrl}" alt="${escapeHTML(item.title)}"><div><h3>${escapeHTML(item.title)}</h3><p>${new Date(item.createdAt).toLocaleString('ja-JP')}</p><div class="list-actions"><button class="mini-btn" data-history-save="${item.id}">保存</button><button class="mini-btn delete" data-history-delete="${item.id}">消去</button></div></div>`;list.appendChild(card)});list.querySelectorAll('[data-history-save]').forEach(b=>b.addEventListener('click',()=>downloadHistoryImage(b.dataset.historySave)));list.querySelectorAll('[data-history-delete]').forEach(b=>b.addEventListener('click',()=>deleteHistoryImage(b.dataset.historyDelete)))}
-async function addHistoryImage(){if(!lastImageDataUrl)return;const blob=lastHistoryBlob||dataURLToBlob(lastHistoryDataUrl||lastImageDataUrl);const item={id:uid('hist'),title:lastImageTitle||currentSheetTitle||'メニュー表',createdAt:new Date().toISOString(),type:blob.type||lastHistoryType||'image/jpeg',blob};if(await putHistoryRecord(item)){await renderHistoryScreen();alert('履歴に追加しました')}}
-async function downloadHistoryImage(id){const hist=await getHistoryRecords();const item=hist.find(h=>h.id===id);if(!item)return;const objectUrl=item.blob?blobToObjectUrl(item.blob):'',a=document.createElement('a');a.href=objectUrl||item.dataUrl;a.download=`${item.title||'training-menu'}.${historyExt(item)}`;a.click();if(objectUrl)setTimeout(()=>URL.revokeObjectURL(objectUrl),1000)}
-async function deleteHistoryImage(id){if(!confirm('この履歴画像を消去しますか？'))return;await deleteHistoryRecord(id);await renderHistoryScreen()}
+async function renderHistoryScreen(){
+  const token=++historyRenderToken,list=$('historyList');
+  if(!list)return;
+  closeHistoryPreview();
+  revokeHistoryObjectUrls();
+  list.innerHTML='<div class="empty">読み込み中...</div>';
+  const hist=await getHistoryRecords();
+  if(token!==historyRenderToken)return;
+  state.history=hist.map(({blob,...rest})=>rest);
+  list.innerHTML='';
+  if(!hist.length){list.innerHTML='<div class="empty">履歴がありません<br>画像出力後に「履歴に追加」を押してください</div>';return}
+  hist.slice().reverse().forEach(item=>{
+    const title=item.title||'メニュー表';
+    const imgUrl=item.blob?blobToObjectUrl(item.blob):item.dataUrl;
+    if(item.blob)historyObjectUrls.push(imgUrl);
+    const card=document.createElement('article');
+    card.className='history-card';
+    card.innerHTML=`<button class="history-thumb" type="button"><img alt="${escapeHTML(title)}"><span>写真を開く</span></button><div class="history-card-content"><h3>${escapeHTML(title)}</h3><p>${new Date(item.createdAt).toLocaleString('ja-JP')}</p><div class="list-actions"><button class="mini-btn" type="button">保存</button><button class="mini-btn delete" type="button">消去</button></div></div>`;
+    card.querySelector('img').src=imgUrl;
+    card.querySelector('.history-thumb').addEventListener('click',()=>openHistoryPreview(item,imgUrl));
+    const [saveButton,deleteButton]=card.querySelectorAll('.list-actions button');
+    saveButton.addEventListener('click',()=>downloadHistoryImage(item.id));
+    deleteButton.addEventListener('click',()=>deleteHistoryImage(item.id));
+    list.appendChild(card);
+  });
+}
+function openHistoryPreview(item,imgUrl){historyPreviewId=item.id;$('historyPreviewTitle').textContent=item.title||'メニュー表';$('historyPreviewImg').src=imgUrl;$('historyPreviewWrap').classList.add('open');$('closeHistoryPreview').focus()}
+function closeHistoryPreview(){const wrap=$('historyPreviewWrap');if(!wrap)return;wrap.classList.remove('open');historyPreviewId=''}
+async function addHistoryImage(){if(!lastImageDataUrl)return;const blob=lastHistoryBlob||dataURLToBlob(lastHistoryDataUrl||lastImageDataUrl);const item={id:uid('hist'),title:lastImageTitle||currentSheetTitle||'メニュー表',createdAt:new Date().toISOString(),type:blob.type||lastHistoryType||'image/jpeg',blob};if(await putHistoryRecord(item))alert('履歴に追加しました')}
+async function downloadHistoryImage(id){const hist=await getHistoryRecords();const item=hist.find(h=>h.id===id);if(!item)return;const objectUrl=item.blob?blobToObjectUrl(item.blob):'';triggerDownload(objectUrl||item.dataUrl,uniqueImageFileName(item.title,historyExt(item)));if(objectUrl)setTimeout(()=>URL.revokeObjectURL(objectUrl),1000)}
+async function deleteHistoryImage(id){if(!confirm('この履歴画像を消去しますか？'))return;closeHistoryPreview();await deleteHistoryRecord(id);await renderHistoryScreen()}
 function renderListScreen(){
   renderCategoryChips($('categoryChips'),listCategory,id=>{listCategory=id;renderListScreen()},true);
   const toggle=$('reorderToggle');
@@ -472,7 +505,7 @@ function deleteMenu(){
   renderListScreen();
 }
 function exportImage(){const t=calcTotals();if(t.noPeople){alert('人数パターンが選択されていません');return}const rows=setPlan.map(r=>({row:r,menu:findMenu(r.menuId)})).filter(x=>x.menu),w=1080,rowH=72,tableY=t.mismatch?350:305,h=Math.max(860,tableY+rows.length*rowH+100),c=document.createElement('canvas');c.width=w;c.height=h;const ctx=c.getContext('2d'),peopleSummary=selectedPeople.map(p=>`${p}人：${t.byPerson[p].peopleSets}人set`).join('　'),timeSummary=selectedPeople.map(p=>`${p}人：${formatSeconds(t.byPerson[p].seconds)}`).join('　');ctx.fillStyle='#fff';ctx.fillRect(0,0,w,h);drawText(ctx,'#17823b','800 34px sans-serif','練習メニュー表',60,70,960);drawText(ctx,'#16201a','900 54px sans-serif',currentSheetTitle,60,145,960);drawText(ctx,'#6a756f','800 24px sans-serif',`合計人set　${peopleSummary}`,60,195,960);drawText(ctx,'#6a756f','800 24px sans-serif',`所要時間　${timeSummary}`,60,235,960);if(t.mismatch)drawText(ctx,'#d94141','900 24px sans-serif','注意：人数パターンごとに、メニュー別の人setが一致していません。',60,285,960);let y=tableY;drawText(ctx,'#6a756f','800 24px sans-serif','No.',60,y);drawText(ctx,'#6a756f','800 24px sans-serif','メニュー',145,y);const colXs=selectedPeople.length===1?[820]:[720,880];selectedPeople.forEach((p,idx)=>drawText(ctx,'#6a756f','800 24px sans-serif',`${p}人`,colXs[idx],y,120));y+=26;ctx.strokeStyle='#dce6df';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(60,y);ctx.lineTo(1020,y);ctx.stroke();y+=48;rows.forEach((x,i)=>{const{row,menu}=x;ctx.fillStyle=i%2?'#f7faf8':'#fff';ctx.fillRect(50,y-36,980,rowH);drawText(ctx,'#17823b','900 28px sans-serif',String(i+1),70,y+10,50);drawText(ctx,'#16201a','900 30px sans-serif',menu.name,145,y+10,selectedPeople.length===1?620:520);if(menu.requiresSets)selectedPeople.forEach((p,idx)=>drawText(ctx,'#16201a','900 30px sans-serif',`${getSets(row,p)} set`,colXs[idx],y+10,120));else drawText(ctx,'#6a756f','800 26px sans-serif',`固定 ${formatSeconds(menu.seconds)}`,colXs[0],y+10,selectedPeople.length===1?180:250);y+=rowH});lastImageDataUrl=c.toDataURL('image/png');lastHistoryDataUrl=c.toDataURL('image/jpeg',0.82);lastHistoryBlob=dataURLToBlob(lastHistoryDataUrl);lastHistoryType='image/jpeg';lastImageTitle=currentSheetTitle;$('previewImg').src=lastImageDataUrl;$('previewWrap').classList.add('open')}
-function fitText(ctx,text,maxWidth){const value=String(text);if(!maxWidth||ctx.measureText(value).width<=maxWidth)return value;let end=value.length;while(end>0&&ctx.measureText(`${value.slice(0,end)}…`).width>maxWidth)end-=1;return `${value.slice(0,end)}…`}function drawText(ctx,color,font,text,x,y,maxWidth){ctx.fillStyle=color;ctx.font=font;ctx.fillText(fitText(ctx,text,maxWidth),x,y)}function downloadImage(){if(!lastImageDataUrl)return;const a=document.createElement('a');a.href=lastImageDataUrl;a.download=`${currentSheetTitle||'training-menu'}.png`;a.click()}
+function fitText(ctx,text,maxWidth){const value=String(text);if(!maxWidth||ctx.measureText(value).width<=maxWidth)return value;let end=value.length;while(end>0&&ctx.measureText(`${value.slice(0,end)}…`).width>maxWidth)end-=1;return `${value.slice(0,end)}…`}function drawText(ctx,color,font,text,x,y,maxWidth){ctx.fillStyle=color;ctx.font=font;ctx.fillText(fitText(ctx,text,maxWidth),x,y)}function downloadImage(){if(!lastImageDataUrl)return;triggerDownload(lastImageDataUrl,uniqueImageFileName(currentSheetTitle,'png'))}
 document.querySelectorAll('[data-go]').forEach(button=>button.addEventListener('click',()=>{if(button.dataset.go==='add')resetAddForm();showScreen(button.dataset.go)}));
 $('addCategoryBtn').addEventListener('click',event=>{event.stopPropagation();$('addCategoryPanel').classList.toggle('open')});
 document.addEventListener('click',event=>{if(!event.target.closest('.field-block'))closeDropdowns()});
@@ -485,6 +518,12 @@ $('confirmDelete').addEventListener('click',deleteMenu);
 $('closePreview').addEventListener('click',()=>$('previewWrap').classList.remove('open'));
 $('downloadImage').addEventListener('click',downloadImage);
 $('addHistoryBtn').addEventListener('click',addHistoryImage);
+$('closeHistoryPreview').addEventListener('click',closeHistoryPreview);
+$('closeHistoryPreviewBottom').addEventListener('click',closeHistoryPreview);
+$('downloadHistoryPreview').addEventListener('click',()=>{if(historyPreviewId)downloadHistoryImage(historyPreviewId)});
+$('historyPreviewWrap').addEventListener('click',event=>{if(event.target===$('historyPreviewWrap'))closeHistoryPreview()});
+$('previewWrap').addEventListener('click',event=>{if(event.target===$('previewWrap'))$('previewWrap').classList.remove('open')});
+document.addEventListener('keydown',event=>{if(event.key!=='Escape')return;if($('historyPreviewWrap').classList.contains('open'))closeHistoryPreview();else $('previewWrap').classList.remove('open')});
 $('reorderToggle').addEventListener('click',()=>{if(activeDrag)cleanupMenuDrag();reorderMode=!reorderMode;renderListScreen()});
 $('menuAddTopBtn').addEventListener('click',()=>{resetAddForm();showScreen('add')});
 if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(error=>console.warn('Service Worker の登録に失敗しました',error)));
@@ -492,5 +531,4 @@ renderCreateScreen();
 renderAddScreen();
 renderListScreen();
 renderCategoryListScreen();
-renderHistoryScreen();
 })();

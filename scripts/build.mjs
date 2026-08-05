@@ -10,14 +10,16 @@ const textFiles=[
   ['styles.css','text/css; charset=utf-8'],
   ['app.js','text/javascript; charset=utf-8'],
   ['sw.js','text/javascript; charset=utf-8'],
-  ['manifest.webmanifest','application/manifest+json; charset=utf-8']
+  ['manifest.webmanifest','application/manifest+json; charset=utf-8'],
+  ['privacy.html','text/html; charset=utf-8'],
+  ['legal.css','text/css; charset=utf-8']
 ];
 
 const binaryFiles=[
-  ['icons/favicon-32-v2.png','image/png'],
-  ['icons/apple-touch-icon-v2.png','image/png'],
-  ['icons/icon-192-v2.png','image/png'],
-  ['icons/icon-512-v2.png','image/png']
+  ['icons/favicon-32-v3.png','image/png'],
+  ['icons/apple-touch-icon-v3.png','image/png'],
+  ['icons/icon-192-v3.png','image/png'],
+  ['icons/icon-512-v3.png','image/png']
 ];
 
 const textAssets=[];
