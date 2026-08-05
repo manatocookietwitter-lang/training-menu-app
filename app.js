@@ -14,6 +14,7 @@ let addCategoryId=state.categories[0]?.id||'';
 let editingMenuId=null;
 let deleteTargetId=null;
 let reorderMode=false;
+let activeDrag=null;
 let historyObjectUrls=[];
 let historyRenderToken=0;
 let lastImageDataUrl='';
@@ -46,8 +47,49 @@ function mutateAndSave(mutator){
   return false;
 }
 function migrateState(){let changed=false;if(!Array.isArray(state.categories)){state.categories=clone(defaultState.categories);changed=true}if(!Array.isArray(state.menus)){state.menus=clone(defaultState.menus);changed=true}if(!Array.isArray(state.history)){state.history=[];changed=true}state.menus.forEach((m,i)=>{if(m.seconds===undefined){m.seconds=Number(m.minutes||0)*60;changed=true}delete m.minutes;if(m.requiresSets===undefined){m.requiresSets=true;changed=true}if(m.order===undefined){m.order=i;changed=true}});if(changed)saveState();migrateHistoryToIDB().then(renderHistoryScreen)}
-function showScreen(name){const prev=currentScreen,dir=slideDirection(prev,name);currentScreen=name;if(name!=='history'){historyRenderToken+=1;revokeHistoryObjectUrls()}document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active','slide-forward','slide-back'));$(`screen-${name}`).classList.add('active',dir==='back'?'slide-back':'slide-forward');closeDropdowns();if(name==='create')renderCreateScreen();if(name==='sets')renderSetScreen();if(name==='add')renderAddScreen();if(name==='list')renderListScreen();if(name==='history')renderHistoryScreen();if(name==='categories')renderCategoryListScreen()}function slideDirection(from,to){const o={home:0,create:1,add:1,list:1,categories:1,history:1,sets:2};return(o[to]??0)<(o[from]??0)?'back':'forward'}function categoryName(id){return state.categories.find(c=>c.id===id)?.name||'未分類'}function findMenu(id){return state.menus.find(m=>m.id===id)}function categoryIndex(id){const i=state.categories.findIndex(c=>c.id===id);return i<0?999:i}function sortedMenus(menus){return menus.slice().sort((a,b)=>categoryIndex(a.categoryId)-categoryIndex(b.categoryId)||(a.order??0)-(b.order??0)||a.name.localeCompare(b.name,'ja'))}function escapeHTML(str){return String(str).replace(/[&<>'"]/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[ch]))}function formatSeconds(sec){const t=Math.max(0,Math.round(Number(sec)||0)),m=Math.floor(t/60),s=t%60;return `${m}分 ${s}秒`}function closeDropdowns(){document.querySelectorAll('.drop-panel').forEach(p=>p.classList.remove('open'))}
-function renderCategoryChips(el,selected,onPick,includeAll=false){el.innerHTML='';if(includeAll)addChip(el,'すべて',selected==='all',()=>onPick('all'));state.categories.forEach(c=>addChip(el,c.name,selected===c.id,()=>onPick(c.id)))}function addChip(el,text,active,fn){const b=document.createElement('button');b.className='chip'+(active?' active':'');b.textContent=text;b.addEventListener('click',fn);el.appendChild(b)}
+function showScreen(name){
+  const previousScreen=currentScreen;
+  const direction=slideDirection(previousScreen,name);
+  if(activeDrag)cleanupMenuDrag();
+  if(name!=='list')reorderMode=false;
+  currentScreen=name;
+  if(name!=='history'){
+    historyRenderToken+=1;
+    revokeHistoryObjectUrls();
+  }
+  document.querySelectorAll('.screen').forEach(screen=>screen.classList.remove('active','slide-forward','slide-back'));
+  $(`screen-${name}`).classList.add('active',direction==='back'?'slide-back':'slide-forward');
+  closeDropdowns();
+  if(name==='create')renderCreateScreen();
+  if(name==='sets')renderSetScreen();
+  if(name==='add')renderAddScreen();
+  if(name==='list')renderListScreen();
+  if(name==='history')renderHistoryScreen();
+  if(name==='categories')renderCategoryListScreen();
+}
+function slideDirection(from,to){const order={home:0,create:1,add:1,list:1,categories:1,history:1,sets:2};return(order[to]??0)<(order[from]??0)?'back':'forward'}
+function categoryName(id){return state.categories.find(category=>category.id===id)?.name||'未分類'}
+function findMenu(id){return state.menus.find(menu=>menu.id===id)}
+function categoryIndex(id){const index=state.categories.findIndex(category=>category.id===id);return index<0?999:index}
+function sortedMenus(menus){return menus.slice().sort((a,b)=>categoryIndex(a.categoryId)-categoryIndex(b.categoryId)||(a.order??0)-(b.order??0)||a.name.localeCompare(b.name,'ja'))}
+function escapeHTML(str){return String(str).replace(/[&<>'"]/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]))}
+function formatSeconds(sec){const total=Math.max(0,Math.round(Number(sec)||0)),minutes=Math.floor(total/60),seconds=total%60;return `${minutes}分 ${seconds}秒`}
+function formatCompactSeconds(sec){const total=Math.max(0,Math.round(Number(sec)||0)),minutes=Math.floor(total/60),seconds=total%60;if(!minutes)return `${seconds}秒`;if(!seconds)return `${minutes}分`;return `${minutes}分 ${seconds}秒`}
+function closeDropdowns(){document.querySelectorAll('.drop-panel').forEach(panel=>panel.classList.remove('open'))}
+function renderCategoryChips(el,selected,onPick,includeAll=false){
+  el.innerHTML='';
+  if(includeAll)addChip(el,'すべて',selected==='all',()=>onPick('all'));
+  state.categories.forEach(category=>addChip(el,category.name,selected===category.id,()=>onPick(category.id)));
+}
+function addChip(el,text,active,onClick){
+  const button=document.createElement('button');
+  button.type='button';
+  button.className='chip'+(active?' active':'');
+  button.textContent=text;
+  button.setAttribute('aria-pressed',String(active));
+  button.addEventListener('click',onClick);
+  el.appendChild(button);
+}
 function renderCategoryPanel(){
   const panel=$('addCategoryPanel');
   panel.innerHTML='';
@@ -76,14 +118,64 @@ function renderCategoryPanel(){
   });
   panel.appendChild(addButton);
 }
-function renderCreateScreen(){renderCategoryChips($('createCategoryChips'),createCategory,id=>{createCategory=id;renderCreateScreen()},true);const list=$('menuSelectList'),menus=sortedMenus(state.menus.filter(m=>createCategory==='all'||m.categoryId===createCategory));list.innerHTML='';if(!menus.length){list.innerHTML='<div class="empty">この分類にはメニューがありません</div>';return}menus.forEach(menu=>{const order=selectedMenuIds.indexOf(menu.id)+1,selected=order>0,row=document.createElement('button');row.className='menu-row';row.innerHTML=`<span class="select-mark ${selected?'selected':''}">${selected?order:''}</span><span><span class="row-name">${escapeHTML(menu.name)}</span><span class="row-meta">${categoryName(menu.categoryId)} / ${menu.seconds}秒 / ${menu.requiresSets?'1set・1人':'固定時間'}</span></span>${menu.requiresSets?'':'<span class="fixed-pill">セットなし</span>'}`;row.addEventListener('click',()=>toggleSelect(menu.id));list.appendChild(row)})}function toggleSelect(id){const i=selectedMenuIds.indexOf(id);i>=0?selectedMenuIds.splice(i,1):selectedMenuIds.push(id);renderCreateScreen()}
+function renderCreateScreen(){
+  renderCategoryChips($('createCategoryChips'),createCategory,id=>{createCategory=id;renderCreateScreen()},true);
+  const selectedCount=selectedMenuIds.length;
+  $('selectedMenuCount').textContent=`${selectedCount}件選択`;
+  $('startSetBtn').disabled=selectedCount===0;
+  $('startSetBtn').textContent=selectedCount?`作成（${selectedCount}件）`:'メニューを選択';
+  const list=$('menuSelectList');
+  const menus=sortedMenus(state.menus.filter(menu=>createCategory==='all'||menu.categoryId===createCategory));
+  list.innerHTML='';
+  if(!menus.length){
+    list.innerHTML='<div class="empty">この分類にはメニューがありません</div>';
+    return;
+  }
+  menus.forEach(menu=>{
+    const order=selectedMenuIds.indexOf(menu.id)+1;
+    const selected=order>0;
+    const row=document.createElement('button');
+    row.type='button';
+    row.className='menu-row'+(selected?' selected':'');
+    row.setAttribute('aria-pressed',String(selected));
+    row.innerHTML=`<span class="select-mark ${selected?'selected':''}">${selected?order:''}</span><span><span class="row-name">${escapeHTML(menu.name)}</span><span class="row-meta">${escapeHTML(categoryName(menu.categoryId))} / ${formatCompactSeconds(menu.seconds)} / ${menu.requiresSets?'1set・1人':'固定時間'}</span></span>${menu.requiresSets?'':'<span class="fixed-pill">セットなし</span>'}`;
+    row.addEventListener('click',()=>toggleSelect(menu.id));
+    list.appendChild(row);
+  });
+}
+function toggleSelect(id){
+  const index=selectedMenuIds.indexOf(id);
+  if(index>=0)selectedMenuIds.splice(index,1);
+  else selectedMenuIds.push(id);
+  renderCreateScreen();
+}
 function startSetSelection(){if(!selectedMenuIds.length){alert('メニューを1つ以上選択してください');return}currentSheetTitle=$('sheetTitle').value.trim()||'メニュー表';setPlan=selectedMenuIds.map(id=>{const menu=findMenu(id),old=setPlan.find(r=>r.menuId===id),sets=old?.sets||{};return{menuId:id,sets:{1:sets[1]??old?.sets1??(menu.requiresSets?1:0),2:sets[2]??old?.sets2??(menu.requiresSets?1:0),3:sets[3]??old?.sets3??(menu.requiresSets?1:0),4:sets[4]??old?.sets4??(menu.requiresSets?1:0),5:sets[5]??old?.sets5??(menu.requiresSets?1:0)}}});showScreen('sets')}
-function renderPeopleSelect(){const el=$('peopleSelect');el.innerHTML='';[1,2,3,4,5].forEach(p=>{const active=selectedPeople.includes(p),disabled=!active&&selectedPeople.length>=2,b=document.createElement('button');b.className='chip'+(active?' active':'')+(disabled?' disabled':'');b.textContent=`${p}人`;b.addEventListener('click',()=>{if(active){selectedPeople=selectedPeople.filter(x=>x!==p)}else{if(disabled)return;selectedPeople.push(p)}selectedPeople=selectedPeople.sort((a,b)=>a-b);renderSetScreen()});el.appendChild(b)})}
+function renderPeopleSelect(){
+  const el=$('peopleSelect');
+  el.innerHTML='';
+  [1,2,3,4,5].forEach(person=>{
+    const active=selectedPeople.includes(person);
+    const disabled=!active&&selectedPeople.length>=2;
+    const button=document.createElement('button');
+    button.type='button';
+    button.className='chip'+(active?' active':'');
+    button.textContent=`${person}人`;
+    button.disabled=disabled;
+    button.setAttribute('aria-pressed',String(active));
+    button.addEventListener('click',()=>{
+      if(active)selectedPeople=selectedPeople.filter(value=>value!==person);
+      else selectedPeople.push(person);
+      selectedPeople=selectedPeople.sort((a,b)=>a-b);
+      renderSetScreen();
+    });
+    el.appendChild(button);
+  });
+}
 function renderSetScreen(){
   selectedPeople=selectedPeople.slice().sort((a,b)=>a-b);renderPeopleSelect();$('setSheetTitle').textContent=currentSheetTitle;
   $('setHead').innerHTML=`<tr><th>メニュー</th>${selectedPeople.map(p=>`<th>${p}人</th>`).join('')}</tr>`;
   const tbody=$('setRows');tbody.innerHTML='';
-  setPlan.forEach((row,i)=>{const menu=findMenu(row.menuId);if(!menu)return;const tr=document.createElement('tr');if(menu.requiresSets){tr.innerHTML=`<td><div class="set-name">${i+1}. ${escapeHTML(menu.name)}<small>${menu.seconds}秒 / 1set・1人</small></div></td>`+selectedPeople.map(p=>`<td>${stepperHTML(i,p,getSets(row,p))}</td>`).join('')}else{tr.innerHTML=`<td><div class="set-name">${i+1}. ${escapeHTML(menu.name)}<small>固定時間 ${menu.seconds}秒</small></div></td>`+(selectedPeople.length?`<td colspan="${selectedPeople.length}"><span class="fixed-pill">セット数なし</span></td>`:'')}tbody.appendChild(tr)});
+  setPlan.forEach((row,i)=>{const menu=findMenu(row.menuId);if(!menu)return;const tr=document.createElement('tr');if(menu.requiresSets){tr.innerHTML=`<td><div class="set-name">${i+1}. ${escapeHTML(menu.name)}<small>${formatCompactSeconds(menu.seconds)} / 1set・1人</small></div></td>`+selectedPeople.map(p=>`<td>${stepperHTML(i,p,getSets(row,p))}</td>`).join('')}else{tr.innerHTML=`<td><div class="set-name">${i+1}. ${escapeHTML(menu.name)}<small>固定時間 ${formatCompactSeconds(menu.seconds)}</small></div></td>`+(selectedPeople.length?`<td colspan="${selectedPeople.length}"><span class="fixed-pill">セット数なし</span></td>`:'')}tbody.appendChild(tr)});
   tbody.querySelectorAll('[data-step]').forEach(btn=>btn.addEventListener('click',()=>{const i=Number(btn.dataset.index),p=btn.dataset.person,delta=Number(btn.dataset.step);setPlan[i].sets[p]=Math.max(0,getSets(setPlan[i],p)+delta);renderSetScreen()}));
   const t=calcTotals(),exportBtn=$('exportImageBtn');
   if(t.noPeople){$('setTotalsLine').innerHTML='<span>未選択</span>';$('totalTime').textContent='0分 0秒';$('totalNote').textContent='';$('statusBox').className='status ng';$('statusBox').textContent='選択されていません';if(exportBtn)exportBtn.disabled=true;return}
@@ -119,7 +211,11 @@ function calculateTotals(people,plan,menus){
   return{byPerson,mismatch:mismatchMenus.length>0,mismatchMenus,noPeople:false};
 }
 function calcTotals(){return calculateTotals(selectedPeople,setPlan,state.menus)}
-function setFixedSwitch(on){$('fixedSwitch').classList.toggle('on',!!on)}
+function setFixedSwitch(on){
+  const enabled=!!on;
+  $('fixedSwitch').classList.toggle('on',enabled);
+  $('fixedToggle').setAttribute('aria-pressed',String(enabled));
+}
 function fixedMode(){return $('fixedSwitch').classList.contains('on')}
 function updateTimeLabel(){$('timeLabel').textContent=fixedMode()?'時間（秒・固定）':'時間（秒 / 1set・1人）'}
 function resetAddForm(){
@@ -222,30 +318,126 @@ function renderListScreen(){
   const toggle=$('reorderToggle');
   toggle.textContent=reorderMode?'完了':'並び替え';
   toggle.classList.toggle('active',reorderMode);
+  toggle.setAttribute('aria-pressed',String(reorderMode));
+  $('reorderHint').hidden=!reorderMode;
   const list=$('menuList');
   const menus=sortedMenus(state.menus.filter(menu=>listCategory==='all'||menu.categoryId===listCategory));
+  $('listCount').textContent=`${menus.length}件`;
   list.innerHTML='';
   if(!menus.length){list.innerHTML='<div class="empty">メニューがありません</div>';return}
   menus.forEach(menu=>{
     const card=document.createElement('div');
-    const mode=menu.requiresSets?`${menu.seconds}秒 / 1set・1人`:`${menu.seconds}秒 / 固定時間`;
+    const mode=menu.requiresSets?`${formatCompactSeconds(menu.seconds)} / 1set・1人`:`${formatCompactSeconds(menu.seconds)} / 固定時間`;
     const siblings=sortedMenus(state.menus.filter(item=>item.categoryId===menu.categoryId));
-    const position=siblings.findIndex(item=>item.id===menu.id);
     const actions=reorderMode
-      ? `<button class="mini-btn move-btn" data-menu-move="${menu.id}" data-direction="-1" aria-label="上へ移動" ${position===0?'disabled':''}>↑</button><button class="mini-btn move-btn" data-menu-move="${menu.id}" data-direction="1" aria-label="下へ移動" ${position===siblings.length-1?'disabled':''}>↓</button>`
+      ? `<button type="button" class="drag-handle" data-drag-handle="${menu.id}" aria-label="「${escapeHTML(menu.name)}」を並び替え" title="ドラッグして並び替え" ${siblings.length<2?'disabled':''}>☰</button>`
       : `<button class="mini-btn" data-edit="${menu.id}">編集</button><button class="mini-btn delete" data-delete="${menu.id}">消去</button>`;
-    card.className='list-card';
-    card.innerHTML=`<div><h3>${escapeHTML(menu.name)}</h3><p>${categoryName(menu.categoryId)} / ${mode}</p></div><div class="list-actions">${actions}</div>`;
+    card.className='list-card'+(reorderMode?' reorder-card':'');
+    card.dataset.menuId=menu.id;
+    card.dataset.categoryId=menu.categoryId;
+    card.innerHTML=`<div><h3>${escapeHTML(menu.name)}</h3><p>${escapeHTML(categoryName(menu.categoryId))} / ${mode}</p></div><div class="list-actions">${actions}</div>`;
     list.appendChild(card);
   });
   if(reorderMode){
-    list.querySelectorAll('[data-menu-move]').forEach(button=>button.addEventListener('click',()=>moveMenu(button.dataset.menuMove,Number(button.dataset.direction))));
+    setupMenuDrag(list);
   }else{
     list.querySelectorAll('[data-edit]').forEach(button=>button.addEventListener('click',()=>{editingMenuId=button.dataset.edit;showScreen('add')}));
     list.querySelectorAll('[data-delete]').forEach(button=>button.addEventListener('click',()=>openDeleteModal(button.dataset.delete)));
   }
 }
-function moveMenu(menuId,direction){
+function setupMenuDrag(list){
+  list.querySelectorAll('[data-drag-handle]').forEach(handle=>{
+    handle.addEventListener('pointerdown',event=>startMenuDrag(event,list));
+    handle.addEventListener('keydown',event=>{
+      if(event.key!=='ArrowUp'&&event.key!=='ArrowDown')return;
+      event.preventDefault();
+      moveMenu(handle.dataset.dragHandle,event.key==='ArrowUp'?-1:1,true);
+    });
+  });
+}
+function startMenuDrag(event,list){
+  if(activeDrag||event.button!==0)return;
+  const handle=event.currentTarget;
+  const card=handle.closest('[data-menu-id]');
+  if(!card)return;
+  event.preventDefault();
+  handle.setPointerCapture?.(event.pointerId);
+  activeDrag={
+    pointerId:event.pointerId,
+    sourceId:card.dataset.menuId,
+    categoryId:card.dataset.categoryId,
+    targetId:null,
+    position:null,
+    handle,
+    card,
+    list
+  };
+  card.classList.add('dragging');
+  document.body.classList.add('is-dragging');
+  document.addEventListener('pointermove',updateMenuDrag,{passive:false});
+  document.addEventListener('pointerup',finishMenuDrag);
+  document.addEventListener('pointercancel',cancelMenuDrag);
+}
+function updateMenuDrag(event){
+  if(!activeDrag||event.pointerId!==activeDrag.pointerId)return;
+  event.preventDefault();
+  const listRect=activeDrag.list.getBoundingClientRect();
+  if(event.clientY<listRect.top+44)activeDrag.list.scrollTop-=12;
+  else if(event.clientY>listRect.bottom-44)activeDrag.list.scrollTop+=12;
+  clearDragTargets(activeDrag.list);
+  const target=document.elementFromPoint(event.clientX,event.clientY)?.closest('.list-card[data-menu-id]');
+  if(!target||target.dataset.menuId===activeDrag.sourceId||target.dataset.categoryId!==activeDrag.categoryId){
+    activeDrag.targetId=null;
+    activeDrag.position=null;
+    return;
+  }
+  const rect=target.getBoundingClientRect();
+  const position=event.clientY<rect.top+rect.height/2?'before':'after';
+  target.classList.add(position==='before'?'drop-before':'drop-after');
+  activeDrag.targetId=target.dataset.menuId;
+  activeDrag.position=position;
+}
+function finishMenuDrag(event){
+  if(!activeDrag||event.pointerId!==activeDrag.pointerId)return;
+  const {sourceId,targetId,position}=activeDrag;
+  cleanupMenuDrag();
+  if(targetId&&position)moveMenuRelative(sourceId,targetId,position);
+}
+function cancelMenuDrag(event){
+  if(!activeDrag||event.pointerId!==activeDrag.pointerId)return;
+  cleanupMenuDrag();
+}
+function cleanupMenuDrag(){
+  if(!activeDrag)return;
+  clearDragTargets(activeDrag.list);
+  activeDrag.card.classList.remove('dragging');
+  if(activeDrag.handle.hasPointerCapture?.(activeDrag.pointerId))activeDrag.handle.releasePointerCapture(activeDrag.pointerId);
+  document.body.classList.remove('is-dragging');
+  document.removeEventListener('pointermove',updateMenuDrag);
+  document.removeEventListener('pointerup',finishMenuDrag);
+  document.removeEventListener('pointercancel',cancelMenuDrag);
+  activeDrag=null;
+}
+function clearDragTargets(list){
+  list.querySelectorAll('.drop-before,.drop-after').forEach(card=>card.classList.remove('drop-before','drop-after'));
+}
+function moveMenuRelative(menuId,targetId,position){
+  const menu=findMenu(menuId);
+  const target=findMenu(targetId);
+  if(!menu||!target||menu.id===target.id||menu.categoryId!==target.categoryId)return;
+  const siblings=sortedMenus(state.menus.filter(item=>item.categoryId===menu.categoryId));
+  const originalIds=siblings.map(item=>item.id);
+  const ids=originalIds.filter(id=>id!==menuId);
+  let insertIndex=ids.indexOf(targetId);
+  if(insertIndex<0)return;
+  if(position==='after')insertIndex+=1;
+  ids.splice(insertIndex,0,menuId);
+  if(ids.every((id,index)=>id===originalIds[index]))return;
+  if(!mutateAndSave(()=>ids.forEach((id,index)=>{const item=findMenu(id);if(item)item.order=index})))return;
+  renderListScreen();
+  $('reorderStatus').textContent=`${menu.name}を${insertIndex+1}番目に移動しました`;
+}
+function moveMenu(menuId,direction,restoreFocus=false){
   const menu=findMenu(menuId);
   if(!menu)return;
   const siblings=sortedMenus(state.menus.filter(item=>item.categoryId===menu.categoryId));
@@ -254,12 +446,16 @@ function moveMenu(menuId,direction){
   if(from<0||to<0||to>=siblings.length)return;
   const ids=siblings.map(item=>item.id);
   [ids[from],ids[to]]=[ids[to],ids[from]];
-  if(!mutateAndSave(()=>ids.forEach((id,index)=>{findMenu(id).order=index})))return;
+  if(!mutateAndSave(()=>ids.forEach((id,index)=>{const item=findMenu(id);if(item)item.order=index})))return;
   renderListScreen();
+  $('reorderStatus').textContent=`${menu.name}を${to+1}番目に移動しました`;
+  if(restoreFocus)requestAnimationFrame(()=>document.querySelector(`[data-drag-handle="${menuId}"]`)?.focus());
 }
 function openDeleteModal(id){
+  const menu=findMenu(id);
+  if(!menu)return;
   deleteTargetId=id;
-  $('confirmText').textContent=`「${findMenu(id).name}」を消去します。`;
+  $('confirmText').textContent=`「${menu.name}」を消去します。`;
   $('confirmModal').classList.add('open');
 }
 function closeDeleteModal(){
@@ -277,5 +473,24 @@ function deleteMenu(){
 }
 function exportImage(){const t=calcTotals();if(t.noPeople){alert('人数パターンが選択されていません');return}const rows=setPlan.map(r=>({row:r,menu:findMenu(r.menuId)})).filter(x=>x.menu),w=1080,rowH=72,tableY=t.mismatch?350:305,h=Math.max(860,tableY+rows.length*rowH+100),c=document.createElement('canvas');c.width=w;c.height=h;const ctx=c.getContext('2d'),peopleSummary=selectedPeople.map(p=>`${p}人：${t.byPerson[p].peopleSets}人set`).join('　'),timeSummary=selectedPeople.map(p=>`${p}人：${formatSeconds(t.byPerson[p].seconds)}`).join('　');ctx.fillStyle='#fff';ctx.fillRect(0,0,w,h);drawText(ctx,'#17823b','800 34px sans-serif','練習メニュー表',60,70,960);drawText(ctx,'#16201a','900 54px sans-serif',currentSheetTitle,60,145,960);drawText(ctx,'#6a756f','800 24px sans-serif',`合計人set　${peopleSummary}`,60,195,960);drawText(ctx,'#6a756f','800 24px sans-serif',`所要時間　${timeSummary}`,60,235,960);if(t.mismatch)drawText(ctx,'#d94141','900 24px sans-serif','注意：人数パターンごとに、メニュー別の人setが一致していません。',60,285,960);let y=tableY;drawText(ctx,'#6a756f','800 24px sans-serif','No.',60,y);drawText(ctx,'#6a756f','800 24px sans-serif','メニュー',145,y);const colXs=selectedPeople.length===1?[820]:[720,880];selectedPeople.forEach((p,idx)=>drawText(ctx,'#6a756f','800 24px sans-serif',`${p}人`,colXs[idx],y,120));y+=26;ctx.strokeStyle='#dce6df';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(60,y);ctx.lineTo(1020,y);ctx.stroke();y+=48;rows.forEach((x,i)=>{const{row,menu}=x;ctx.fillStyle=i%2?'#f7faf8':'#fff';ctx.fillRect(50,y-36,980,rowH);drawText(ctx,'#17823b','900 28px sans-serif',String(i+1),70,y+10,50);drawText(ctx,'#16201a','900 30px sans-serif',menu.name,145,y+10,selectedPeople.length===1?620:520);if(menu.requiresSets)selectedPeople.forEach((p,idx)=>drawText(ctx,'#16201a','900 30px sans-serif',`${getSets(row,p)} set`,colXs[idx],y+10,120));else drawText(ctx,'#6a756f','800 26px sans-serif',`固定 ${formatSeconds(menu.seconds)}`,colXs[0],y+10,selectedPeople.length===1?180:250);y+=rowH});lastImageDataUrl=c.toDataURL('image/png');lastHistoryDataUrl=c.toDataURL('image/jpeg',0.82);lastHistoryBlob=dataURLToBlob(lastHistoryDataUrl);lastHistoryType='image/jpeg';lastImageTitle=currentSheetTitle;$('previewImg').src=lastImageDataUrl;$('previewWrap').classList.add('open')}
 function fitText(ctx,text,maxWidth){const value=String(text);if(!maxWidth||ctx.measureText(value).width<=maxWidth)return value;let end=value.length;while(end>0&&ctx.measureText(`${value.slice(0,end)}…`).width>maxWidth)end-=1;return `${value.slice(0,end)}…`}function drawText(ctx,color,font,text,x,y,maxWidth){ctx.fillStyle=color;ctx.font=font;ctx.fillText(fitText(ctx,text,maxWidth),x,y)}function downloadImage(){if(!lastImageDataUrl)return;const a=document.createElement('a');a.href=lastImageDataUrl;a.download=`${currentSheetTitle||'training-menu'}.png`;a.click()}
-document.querySelectorAll('[data-go]').forEach(b=>b.addEventListener('click',()=>{if(b.dataset.go==='add')resetAddForm();showScreen(b.dataset.go)}));$('addCategoryBtn').addEventListener('click',e=>{e.stopPropagation();$('addCategoryPanel').classList.toggle('open')});document.addEventListener('click',e=>{if(!e.target.closest('.field-block'))closeDropdowns()});$('startSetBtn').addEventListener('click',startSetSelection);$('fixedToggle').addEventListener('click',()=>{$('fixedSwitch').classList.toggle('on');updateTimeLabel()});$('saveMenuBtn').addEventListener('click',saveMenu);$('exportImageBtn').addEventListener('click',exportImage);$('cancelDelete').addEventListener('click',closeDeleteModal);$('confirmDelete').addEventListener('click',deleteMenu);$('closePreview').addEventListener('click',()=>$('previewWrap').classList.remove('open'));$('downloadImage').addEventListener('click',downloadImage);$('addHistoryBtn').addEventListener('click',addHistoryImage);$('reorderToggle').addEventListener('click',()=>{reorderMode=!reorderMode;renderListScreen()});$('menuAddTopBtn').addEventListener('click',()=>{resetAddForm();showScreen('add')});if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(error=>console.warn('Service Worker の登録に失敗しました',error)));renderCreateScreen();renderAddScreen();renderListScreen();renderCategoryListScreen();renderHistoryScreen();
+document.querySelectorAll('[data-go]').forEach(button=>button.addEventListener('click',()=>{if(button.dataset.go==='add')resetAddForm();showScreen(button.dataset.go)}));
+$('addCategoryBtn').addEventListener('click',event=>{event.stopPropagation();$('addCategoryPanel').classList.toggle('open')});
+document.addEventListener('click',event=>{if(!event.target.closest('.field-block'))closeDropdowns()});
+$('startSetBtn').addEventListener('click',startSetSelection);
+$('fixedToggle').addEventListener('click',()=>{setFixedSwitch(!fixedMode());updateTimeLabel()});
+$('saveMenuBtn').addEventListener('click',saveMenu);
+$('exportImageBtn').addEventListener('click',exportImage);
+$('cancelDelete').addEventListener('click',closeDeleteModal);
+$('confirmDelete').addEventListener('click',deleteMenu);
+$('closePreview').addEventListener('click',()=>$('previewWrap').classList.remove('open'));
+$('downloadImage').addEventListener('click',downloadImage);
+$('addHistoryBtn').addEventListener('click',addHistoryImage);
+$('reorderToggle').addEventListener('click',()=>{if(activeDrag)cleanupMenuDrag();reorderMode=!reorderMode;renderListScreen()});
+$('menuAddTopBtn').addEventListener('click',()=>{resetAddForm();showScreen('add')});
+if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(error=>console.warn('Service Worker の登録に失敗しました',error)));
+renderCreateScreen();
+renderAddScreen();
+renderListScreen();
+renderCategoryListScreen();
+renderHistoryScreen();
 })();
