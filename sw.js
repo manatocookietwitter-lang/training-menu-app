@@ -1,5 +1,5 @@
-const CACHE_NAME = 'training-menu-pwa-v20260805-drag-ux-5';
-const ASSETS = ['./','./index.html','./styles.css?v=20260805-1','./app.js?v=20260805-1','./manifest.webmanifest','./icons/icon-192.png','./icons/icon-512.png'];
+const CACHE_NAME = 'training-menu-pwa-v20260805-publish-6';
+const ASSETS = ['./','./index.html','./styles.css?v=20260805-1','./app.js?v=20260805-1','./manifest.webmanifest','./icons/favicon-32-v2.png','./icons/apple-touch-icon-v2.png','./icons/icon-192-v2.png','./icons/icon-512-v2.png'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(ASSETS)));
   self.skipWaiting();
