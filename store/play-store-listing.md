@@ -21,14 +21,14 @@
 
 ## 公開用URL
 
-- アプリ：https://badminton-training-menu.manato0618.chatgpt.site/
-- プライバシーポリシー：https://badminton-training-menu.manato0618.chatgpt.site/privacy.html
-- Web App Manifest：https://badminton-training-menu.manato0618.chatgpt.site/manifest.webmanifest
+- アプリ：https://manatocookietwitter-lang.github.io/training-menu-app/
+- プライバシーポリシー：https://manatocookietwitter-lang.github.io/training-menu-app/privacy.html
+- Web App Manifest：https://manatocookietwitter-lang.github.io/training-menu-app/manifest.webmanifest
 
 ## Android App Bundleを作るときの設定
 
 - 方式：Trusted Web Activity（Bubblewrap）
-- 推奨パッケージID例：`site.chatgpt.manato0618.trainingmenu`
+- 推奨パッケージID例：`io.github.manatocookietwitterlang.trainingmenu`
 - target SDK：API 36
 - display mode：standalone
 - theme color：`#17823b`
@@ -37,7 +37,7 @@
 パッケージIDはGoogle Playへの初回登録後に変更できないため、確定してからAndroidプロジェクトを作成すること。
 
 ```powershell
-npx @bubblewrap/cli init --manifest=https://badminton-training-menu.manato0618.chatgpt.site/manifest.webmanifest
+npx @bubblewrap/cli init --manifest=https://manatocookietwitter-lang.github.io/training-menu-app/manifest.webmanifest
 npx @bubblewrap/cli build
 ```
 
