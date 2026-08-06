@@ -221,6 +221,7 @@ input {
 }
 
 .home-icon {
+  position: relative;
   display: grid;
   place-items: center;
   width: 46px;
@@ -228,8 +229,82 @@ input {
   border-radius: 15px;
   color: var(--green);
   background: var(--green-soft);
-  font-size: 22px;
-  font-weight: 900;
+  box-shadow: inset 0 0 0 1px rgba(23, 130, 59, 0.05);
+  transition: color 0.18s ease, background-color 0.18s ease, transform 0.18s ease;
+}
+
+.icon-plan::before {
+  width: 23px;
+  height: 25px;
+  border: 2px solid currentColor;
+  border-radius: 5px;
+  content: "";
+}
+
+.icon-plan::after {
+  position: absolute;
+  top: 15px;
+  left: 50%;
+  width: 13px;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 6px 0 currentColor, 0 12px 0 currentColor;
+  content: "";
+  transform: translateX(-50%);
+}
+
+.icon-list::before {
+  position: absolute;
+  top: 15px;
+  left: 44%;
+  width: 18px;
+  height: 2px;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 7px 0 currentColor, 0 14px 0 currentColor;
+  content: "";
+}
+
+.icon-list::after {
+  position: absolute;
+  top: 14px;
+  left: 24%;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 7px 0 currentColor, 0 14px 0 currentColor;
+  content: "";
+}
+
+.icon-categories::before {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  background: currentColor;
+  box-shadow: 13px 0 0 currentColor, 0 13px 0 currentColor, 13px 13px 0 currentColor;
+  content: "";
+  transform: translate(-6.5px, -6.5px);
+}
+
+.icon-history::before {
+  width: 24px;
+  height: 24px;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  content: "";
+}
+
+.icon-history::after {
+  position: absolute;
+  top: 15px;
+  left: 50%;
+  width: 7px;
+  height: 8px;
+  border-bottom: 2px solid currentColor;
+  border-left: 2px solid currentColor;
+  content: "";
 }
 
 .home-copy {
@@ -1212,6 +1287,12 @@ input {
   .list-card:hover {
     border-color: rgba(23, 130, 59, 0.3);
     box-shadow: var(--shadow-strong);
+  }
+
+  .home-card:hover .home-icon {
+    color: var(--green-dark);
+    background: #e1f3e6;
+    transform: translateY(-1px);
   }
 
   .mini-btn:hover,
