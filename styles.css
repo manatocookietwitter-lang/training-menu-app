@@ -372,6 +372,34 @@ input {
   box-shadow: 0 0 0 4px rgba(23, 130, 59, 0.1);
 }
 
+.time-input-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.time-input {
+  position: relative;
+  display: block;
+}
+
+.time-input .num-input {
+  padding-right: 42px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.time-input span {
+  position: absolute;
+  top: 50%;
+  right: 14px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 900;
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
 .select-button {
   display: flex;
   align-items: center;

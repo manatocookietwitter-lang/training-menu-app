@@ -223,11 +223,12 @@ function setFixedSwitch(on){
   $('fixedToggle').setAttribute('aria-pressed',String(enabled));
 }
 function fixedMode(){return $('fixedSwitch').classList.contains('on')}
-function updateTimeLabel(){$('timeLabel').textContent=fixedMode()?'時間（秒・固定）':'時間（秒 / 1set・1人）'}
+function updateTimeLabel(){$('timeLabel').textContent=fixedMode()?'時間（固定）':'時間（1set・1人）'}
 function resetAddForm(){
   editingMenuId=null;
   $('menuName').value='';
-  $('menuSeconds').value='';
+  $('menuMinutes').value='';
+  $('menuSecondsPart').value='';
   addCategoryId=state.categories[0]?.id||'';
   setFixedSwitch(false);
   updateTimeLabel();
@@ -236,8 +237,10 @@ function renderAddScreen(){
   const editing=editingMenuId?findMenu(editingMenuId):null;
   $('addTitle').textContent=editing?'メニュー編集':'メニュー追加';
   if(editing){
+    const totalSeconds=Math.max(0,Math.round(Number(editing.seconds)||0));
     $('menuName').value=editing.name;
-    $('menuSeconds').value=editing.seconds;
+    $('menuMinutes').value=Math.floor(totalSeconds/60);
+    $('menuSecondsPart').value=totalSeconds%60;
     addCategoryId=editing.categoryId;
     setFixedSwitch(!editing.requiresSets);
   }
@@ -247,10 +250,13 @@ function renderAddScreen(){
 }
 function saveMenu(){
   const name=$('menuName').value.trim();
-  const seconds=Number($('menuSeconds').value);
+  const minutes=Number($('menuMinutes').value||0);
+  const secondsPart=Number($('menuSecondsPart').value||0);
   if(!name)return alert('名前を入力してください');
   if(!addCategoryId)return alert('分類を選択してください');
-  if(!Number.isFinite(seconds)||seconds<0)return alert('時間を秒で入力してください');
+  if(!Number.isInteger(minutes)||minutes<0)return alert('分は0以上の整数で入力してください');
+  if(!Number.isInteger(secondsPart)||secondsPart<0||secondsPart>59)return alert('秒は0〜59の整数で入力してください');
+  const seconds=minutes*60+secondsPart;
   const data={name,categoryId:addCategoryId,seconds,requiresSets:!fixedMode()};
   const menuId=editingMenuId;
   const editingMenu=menuId?findMenu(menuId):null;
