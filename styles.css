@@ -166,14 +166,6 @@ input {
   letter-spacing: 0.05em;
 }
 
-.home-lead {
-  margin: -2px 0 4px;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 750;
-  text-align: center;
-}
-
 .sub-title {
   flex-shrink: 0;
   margin: -3px 0 0;
@@ -308,23 +300,12 @@ input {
 }
 
 .home-copy {
-  display: grid;
-  gap: 3px;
   min-width: 0;
 }
 
 .home-copy strong {
   font-size: 16px;
   font-weight: 950;
-}
-
-.home-copy small {
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 10.5px;
-  font-weight: 750;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .chevron {
@@ -1380,10 +1361,6 @@ input {
   .home-title {
     margin-top: 0;
     font-size: 29px;
-  }
-
-  .home-lead {
-    margin-bottom: 0;
   }
 
   .home-menu {
